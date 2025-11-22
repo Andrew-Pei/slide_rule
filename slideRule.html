@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>专业版 HTML 计算尺 (Professional Slide Rule)</title>
+    <style>
+        :root {
+            --bg-color: #333;
+            --rule-bg: #fdf6e3;     /* 象牙白/木色 */
+            --slider-bg: #fffcf5;   /* 滑尺稍微亮一点 */
+            --tick-color: #222;
+            --cursor-frame: #888;
+            --hairline-color: #d32f2f;
+            --scale-width: 1200px;  /* 加宽一点，让刻度更清晰 */
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        h2 { margin-bottom: 5px; font-weight: 300; letter-spacing: 1px; }
+        .subtitle { color: #888; font-size: 0.8em; margin-bottom: 20px; }
+
+        /* 容器 */
+        .slide-rule-wrapper {
+            position: relative;
+            width: 95%;
+            max-width: 1300px;
+            height: 260px;
+            background-color: #1a1a1a;
+            border-radius: 4px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.6);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            overflow: hidden; /* 裁剪超出视野的尺子 */
+            border: 1px solid #444;
+        }
+
+        /* 尺身部分通用 */
+        .rule-part {
+            position: relative;
+            width: 100%;
+            border: 1px solid #666;
+            box-sizing: border-box;
+        }
+
+        .stator {
+            height: 70px;
+            background-color: var(--rule-bg);
+            z-index: 1;
+        }
+        .stator.top { border-bottom: none; border-radius: 4px 4px 0 0; }
+        .stator.bottom { border-top: none; border-radius: 0 0 4px 4px; }
+
+        .slider {
+            height: 80px;
+            background-color: var(--slider-bg);
+            z-index: 2;
+            cursor: grab;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1), 0 2px 5px rgba(0,0,0,0.2);
+            border-top: 1px solid #999;
+            border-bottom: 1px solid #999;
+        }
+        .slider:active { cursor: grabbing; }
+
+        /* 刻度层的容器 (绝对定位，用于移动) */
+        .scale-layer {
+            position: absolute;
+            height: 100%;
+            width: var(--scale-width);
+            left: 50px; /* 初始偏移 */
+            pointer-events: none;
+        }
+
+        /* 刻度线 */
+        .tick {
+            position: absolute;
+            background-color: var(--tick-color);
+            width: 1px;
+            transform-origin: bottom;
+        }
+        
+        /* 刻度数值标签 */
+        .tick-label {
+            position: absolute;
+            color: #333;
+            transform: translateX(-50%);
+            font-size: 11px;
+            font-weight: 500;
+            pointer-events: none;
+            text-align: center;
+        }
+        .tick-label.major { font-size: 16px; font-weight: bold; color: #a00; } /* 整数大红字 */
+        
+        /* 上定尺刻度 (虽然这次没画A尺，但保留样式) */
+        .stator.top .tick { bottom: 0; }
+        
+        /* 下定尺 D尺 刻度样式 */
+        .stator.bottom .tick { top: 0; transform-origin: top; }
+        .stator.bottom .tick-label { top: 25px; }
+        
+        /* 滑尺 C尺 刻度样式 */
+        .slider .tick { bottom: 0; }
+        .slider .tick-label { bottom: 25px; }
+
+        /* 游标 */
+        .cursor {
+            position: absolute;
+            top: -10px; bottom: -10px;
+            width: 80px;
+            left: 400px;
+            background: rgba(200, 220, 255, 0.15); /* 玻璃感 */
+            border: 2px solid var(--cursor-frame);
+            border-radius: 6px;
+            cursor: col-resize;
+            z-index: 10;
+            backdrop-filter: blur(0px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+        }
+        .hairline {
+            position: absolute;
+            left: 50%; top: 0; bottom: 0;
+            width: 1px;
+            background-color: var(--hairline-color);
+            box-shadow: 0 0 2px rgba(255,0,0,0.4);
+        }
+
+        /* 读数面板 */
+        .panel {
+            margin-top: 25px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            background: #222;
+            padding: 15px 30px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        .readout-box {
+            display: flex;
+            flex-direction: column;
+        }
+        .readout-label { font-size: 12px; color: #888; margin-bottom: 4px; text-transform: uppercase; }
+        .readout-value { font-family: 'Courier New', monospace; font-size: 24px; color: #4caf50; font-weight: bold; }
+        
+        .note { margin-top:10px; color: #666; font-size: 12px; max-width: 600px; text-align: center;}
+
+    </style>
+</head>
+<body>
+
+    <h2>计算尺模拟器</h2>
+    <div class="subtitle">对数刻度</div>
+
+    <div class="slide-rule-wrapper" id="wrapper">
+        <div class="stator top">
+            <div style="position:absolute; left:15px; bottom:5px; font-size:12px; color:#888; font-weight:bold;">A</div>
+            </div>
+
+        <div class="slider" id="slider">
+            <div class="scale-layer" id="scale-c">
+                <div style="position:absolute; left:-25px; bottom:8px; color:#c00; font-weight:bold;">C</div>
+            </div>
+        </div>
+
+        <div class="stator bottom">
+            <div class="scale-layer" id="scale-d">
+                <div style="position:absolute; left:-25px; top:8px; color:#c00; font-weight:bold;">D</div>
+            </div>
+        </div>
+
+        <div class="cursor" id="cursor">
+            <div class="hairline"></div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="readout-box">
+            <span class="readout-label">定尺刻度 (D Scale)</span>
+            <span class="readout-value" id="val-d">1.000</span>
+        </div>
+        <div class="readout-box">
+            <span class="readout-label">滑尺刻度 (C Scale)</span>
+            <span class="readout-value" id="val-c">1.000</span>
+        </div>
+    </div>
+    
+<!--     <div class="note">
+        * 注意观察：1-2 之间的刻度非常细密 (0.01)，而 9-10 之间比较稀疏 (0.05)。这是为了适应对数缩小的特性。
+    </div> -->
+
+    <script>
+        // 配置参数
+        const CONFIG = {
+            scaleWidth: 1200,    // 尺身逻辑长度 (px)
+            paddingLeft: 50,     // 左边距
+            scaleStart: 1,       // 刻度开始
+            scaleEnd: 10         // 刻度结束
+        };
+
+        /**
+         * 生成符合真实计算尺规范的刻度
+         * 分段逻辑：
+         * 1.0 - 2.0: 极高密度 (步长 0.01)
+         * 2.0 - 4.0: 中等密度 (步长 0.02)
+         * 4.0 - 10.0: 低密度 (步长 0.05)
+         */
+        function generateScale(elementId) {
+            const container = document.getElementById(elementId);
+            const totalLogLen = Math.log10(CONFIG.scaleEnd) - Math.log10(CONFIG.scaleStart); // usually 1
+
+            // 辅助函数：画线
+            function drawTick(val, type) {
+                const logVal = Math.log10(val);
+                // 计算像素位置: log(val) * 总长度
+                const posPx = logVal * CONFIG.scaleWidth;
+
+                const tick = document.createElement('div');
+                tick.className = 'tick';
+                tick.style.left = posPx + 'px';
+                
+                // 根据类型决定高度和样式
+                let height = 8; // 默认小刻度
+                
+                if (type === 'major') height = 24;       // 整数 1, 2, 3
+                else if (type === 'medium') height = 16; // .5, .1 (in some zones)
+                else if (type === 'minor') height = 10;  // 普通细分
+                
+                tick.style.height = height + 'px';
+                container.appendChild(tick);
+
+                // 添加标签
+                if (type === 'major' || (val < 2 && Math.abs(val % 0.1) < 0.001)) {
+                    // 只给整数 和 1.x 的主刻度加数字
+                    const lbl = document.createElement('div');
+                    lbl.className = 'tick-label';
+                    
+                    if (type === 'major') {
+                        lbl.classList.add('major');
+                        lbl.innerText = val; // 1, 2, 3...
+                    } else {
+                        // 小数字 (1.1, 1.2...)
+                        lbl.innerText = val.toFixed(1).replace('.0', '');
+                    }
+                    
+                    lbl.style.left = posPx + 'px';
+                    container.appendChild(lbl);
+                }
+            }
+
+            // --- 第一区间: 1.00 到 2.00 (步长 0.01) ---
+            for (let i = 100; i < 200; i++) {
+                let val = i / 100;
+                let type = 'tiny';
+                if (i % 100 === 0) type = 'major';      // 1.0, 2.0
+                else if (i % 10 === 0) type = 'medium'; // 1.1, 1.2
+                else if (i % 5 === 0) type = 'minor';   // 1.15
+                else type = 'tiny';                     // 1.11
+                
+                // 过滤太密的线：如果是 tiny 类型，但屏幕不够宽，可以不画
+                // 这里为了仿真，全部画出
+                drawTick(val, type);
+            }
+
+            // --- 第二区间: 2.00 到 4.00 (步长 0.02) ---
+            for (let i = 200; i < 400; i += 2) {
+                let val = i / 100;
+                let type = 'tiny';
+                if (i % 100 === 0) type = 'major';      // 2.0, 3.0
+                else if (i % 10 === 0) type = 'medium'; // 2.1, 2.2
+                else type = 'tiny';                     // 2.02, 2.04...
+                
+                drawTick(val, type);
+            }
+
+            // --- 第三区间: 4.00 到 10.00 (步长 0.05) ---
+            // 注意：真实尺子在 4-10 区间通常只有 0.05 的精度
+            for (let i = 400; i <= 1000; i += 5) {
+                let val = i / 100;
+                let type = 'tiny';
+                if (i % 100 === 0) type = 'major';       // 4.0, 5.0...
+                else if (i % 50 === 0) type = 'medium';  // 4.5, 5.5...
+                else if (i % 10 === 0) type = 'minor';   // 4.1, 4.2...
+                else type = 'tiny';                      // 4.05...
+                
+                drawTick(val, type);
+            }
+        }
+
+        // 初始化生成刻度
+        generateScale('scale-c');
+        generateScale('scale-d');
+
+        // --- 交互逻辑 (Mouse & Touch) ---
+
+        const slider = document.getElementById('slider');
+        const cursor = document.getElementById('cursor');
+        const wrapper = document.getElementById('wrapper');
+
+        let state = {
+            sliderX: 0,   // 滑尺偏移量 (px)
+            cursorX: 400  // 游标偏移量 (px)
+        };
+
+        function updateVisuals() {
+            // 移动 DOM
+            slider.style.transform = `translateX(${state.sliderX}px)`;
+            cursor.style.left = `${state.cursorX}px`;
+            
+            // 计算数值
+            calculateReadings();
+        }
+
+        function calculateReadings() {
+            // 游标红线相对于 Wrapper 左边缘的像素位置
+            // 游标宽80，红线在中间(40)
+            const cursorCenter = state.cursorX + 40;
+            
+            // 1. 计算 D 尺数值 (固定)
+            // D尺起点在 paddingLeft (50)
+            const pixelOnD = cursorCenter - CONFIG.paddingLeft;
+            const valD = Math.pow(10, pixelOnD / CONFIG.scaleWidth);
+
+            // 2. 计算 C 尺数值 (随 sliderX 移动)
+            // C尺起点 = paddingLeft + sliderX
+            const pixelOnC = cursorCenter - (CONFIG.paddingLeft + state.sliderX);
+            const valC = Math.pow(10, pixelOnC / CONFIG.scaleWidth);
+
+            // 显示
+            document.getElementById('val-d').innerText = formatResult(valD);
+            document.getElementById('val-c').innerText = formatResult(valC);
+        }
+
+        function formatResult(val) {
+            if (val < 1 || val > 10.01) return "---"; // 超出范围
+            // 根据数值大小决定小数位，模仿人眼读数精度
+            if (val < 2) return val.toFixed(3); // 1.000 - 1.999
+            if (val < 4) return val.toFixed(3); // 2.00 - 3.99
+            return val.toFixed(2);              // 4.0 - 10.0
+        }
+
+        // 通用拖拽控制器
+        function setupDrag(element, isSlider) {
+            let startX = 0;
+            let startVal = 0;
+            let isDragging = false;
+
+            const onStart = (x) => {
+                isDragging = true;
+                startX = x;
+                startVal = isSlider ? state.sliderX : state.cursorX;
+                document.body.style.cursor = 'grabbing';
+                element.style.cursor = 'grabbing';
+            };
+
+            const onMove = (x) => {
+                if (!isDragging) return;
+                const delta = x - startX;
+                let newVal = startVal + delta;
+
+                if (isSlider) {
+                    // 限制滑尺范围
+                    const limit = CONFIG.scaleWidth; 
+                    if (newVal < -limit) newVal = -limit;
+                    if (newVal > limit) newVal = limit;
+                    state.sliderX = newVal;
+                } else {
+                    // 限制游标范围
+                    const maxCursor = wrapper.clientWidth - 80;
+                    if (newVal < 0) newVal = 0;
+                    if (newVal > maxCursor) newVal = maxCursor;
+                    state.cursorX = newVal;
+                }
+                requestAnimationFrame(updateVisuals);
+            };
+
+            const onEnd = () => {
+                isDragging = false;
+                document.body.style.cursor = 'default';
+                element.style.cursor = isSlider ? 'grab' : 'col-resize';
+            };
+
+            // Mouse Events
+            element.addEventListener('mousedown', e => onStart(e.clientX));
+            window.addEventListener('mousemove', e => onMove(e.clientX));
+            window.addEventListener('mouseup', onEnd);
+
+            // Touch Events (移动端支持)
+            element.addEventListener('touchstart', e => onStart(e.touches[0].clientX), {passive: false});
+            window.addEventListener('touchmove', e => onMove(e.touches[0].clientX), {passive: false});
+            window.addEventListener('touchend', onEnd);
+        }
+
+        setupDrag(slider, true);
+        setupDrag(cursor, false);
+
+        // 初始渲染
+        updateVisuals();
+
+    </script>
+</body>
+</html>
